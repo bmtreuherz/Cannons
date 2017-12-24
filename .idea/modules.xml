@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/../Cannons/Cannons.iml" filepath="$PROJECT_DIR$/../Cannons/Cannons.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../Cannons/app/app.iml" filepath="$PROJECT_DIR$/../Cannons/app/app.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../Cannons/core-0.91.0/core-0.91.0.iml" filepath="$PROJECT_DIR$/../Cannons/core-0.91.0/core-0.91.0.iml" />
+    </modules>
+  </component>
+</project>
