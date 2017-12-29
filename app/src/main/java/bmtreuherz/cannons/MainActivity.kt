@@ -10,6 +10,7 @@ import android.view.*
 import android.widget.Toast
 import bmtreuherz.cannons.rendering.BackgroundRenderer
 import bmtreuherz.cannons.rendering.ObjectRenderer
+import bmtreuherz.cannons.rendering.PlaneRenderer
 import com.google.ar.core.*
 import com.google.ar.core.exceptions.UnavailableApkTooOldException
 import com.google.ar.core.exceptions.UnavailableArcoreNotInstalledException
@@ -32,7 +33,6 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
 
     // AR Session and state
     lateinit private var session: Session
-    lateinit private var state: State
     lateinit private var display: Display
 
     // Tap Handling
@@ -40,11 +40,14 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
 
     // Renderers
     private var backgroundRenderer = BackgroundRenderer()
+    private var planeRenderer = PlaneRenderer()
     private var objectRenderer = ObjectRenderer()
 
     // TODO: REMOVE
-    var rendered = false
     var anchor: Anchor? = null
+    var anchor1: Anchor? = null
+    var anchor2: Anchor? = null
+    var playerOneTurn: Boolean = true
 
     // Activity Methods
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,7 +68,6 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
         // Check if we have camera permissions
         if (CameraPermissionHelper.hasCameraPermission(this)){
             // Resume the session and setup state
-            state = State.SEARCHING_FOR_SURFACES
             showSnackbarMessage("Searching for surfaces...")
             session.resume()
             surfaceView.onResume()
@@ -183,6 +185,13 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
         backgroundRenderer.createOnGlThread(this)
         session.setCameraTextureName(backgroundRenderer.textureId)
 
+        // Setup the plane renderer
+        try{
+            planeRenderer.createOnGlThread(this, "trigrid.png")
+        } catch (e: IOException) {
+            Log.e(TAG, "Failed to read plan texture")
+        }
+
         // Setup the object renderer
         try {
             objectRenderer.createOnGlThread(this, "andy.obj", "andy.png")
@@ -190,6 +199,7 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
         } catch (e: IOException) {
             Log.e(TAG, "Failed to read obj file")
         }
+
     }
 
     override fun onDrawFrame(p0: GL10?) {
@@ -201,35 +211,29 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
             var frame = session.update()
             var camera = frame.camera
 
-            // TODO: Handle taps
+            // Determine the projection maatrix
+            val projM = FloatArray(16)
+            camera.getProjectionMatrix(projM, 0, 0.1f, 100.0f)
+
+            // Handle taps
+            handleTaps(frame)
 
             // Draw the background
-            backgroundRenderer.draw(frame)
+            drawBackground(frame)
 
             // If not tracking, don't draw 3d objects
             if (camera.trackingState != Trackable.TrackingState.TRACKING){
                 return
             }
 
-            // TODO: Draw 3d objects
-            if (anchor == null) {
-                anchor = session.createAnchor(camera.pose)
-            }
+            // Check if we have detected planes
+            checkPlanes()
 
-            val objLocation = FloatArray(16)
-            anchor?.pose?.toMatrix(objLocation, 0)
-            objectRenderer.updateModelMatrix(objLocation, 0.4f)
+            // Draw planes
+            drawPlanes(camera, projM)
 
-            // TODO: Clean this up
-            var projM = FloatArray(16)
-            camera.getProjectionMatrix(projM, 0, 0.1f, 100.0f)
-
-            var viewM = FloatArray(16)
-            camera.getViewMatrix(viewM, 0)
-
-            var lightIntensity = frame.lightEstimate.pixelIntensity
-
-            objectRenderer.draw(viewM, projM, lightIntensity)
+            // Draw objects
+            drawObjects(frame, camera, projM)
 
         } catch(t: Throwable) {
             Log.e(TAG, "Exception on the OpenGL thread", t)
@@ -245,13 +249,69 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
     }
 
 
+    // Drawing helper methods
+    private fun drawPlanes(camera: Camera, projM: FloatArray){
+        var planes = session.getAllTrackables(Plane::class.java)
+        planeRenderer.drawPlanes(planes, camera.displayOrientedPose, projM)
+    }
+
+    // When detecting the first plane, change the state.
+    private fun checkPlanes(){
+        if (snackbar != null){
+            for (plane: Plane in session.getAllTrackables(Plane::class.java)){
+                if (plane.type == com.google.ar.core.Plane.Type.HORIZONTAL_UPWARD_FACING
+                        && plane.trackingState == Trackable.TrackingState.TRACKING) {
+                    when {
+                        anchor1 == null -> showSnackbarMessage("Player one place your cannon.")
+                        anchor2 == null -> showSnackbarMessage("Player two place your cannon.")
+                        else -> when (playerOneTurn) {
+                            true -> showSnackbarMessage("Player one's turn.")
+                            false -> showSnackbarMessage("Player two's turn.")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun drawBackground(frame: Frame){
+        backgroundRenderer.draw(frame)
+    }
+
+    private fun handleTaps(frame: Frame){
+        // TODO: Implement
+    }
+
+    private fun drawObjects(frame: Frame, camera: Camera, projM: FloatArray){
+        // TODO: Do this a real way
+        if (anchor == null) {
+            anchor = session.createAnchor(camera.pose)
+        }
+
+        val objLocation = FloatArray(16)
+        anchor?.pose?.toMatrix(objLocation, 0)
+        objectRenderer.updateModelMatrix(objLocation, 0.4f)
+
+        // TODO: Clean this up
+        val viewM = FloatArray(16)
+        camera.getViewMatrix(viewM, 0)
+
+        val lightIntensity = frame.lightEstimate.pixelIntensity
+
+        objectRenderer.draw(viewM, projM, lightIntensity)
+    }
+
 
     // Snackbar stuff
     private fun showSnackbarMessage(message: String){
         runOnUiThread {
-            snackbar = Snackbar.make(this@MainActivity.findViewById(android.R.id.content), message, Snackbar.LENGTH_INDEFINITE)
-            snackbar?.view?.setBackgroundColor(0xbf323232.toInt())
-            snackbar?.show()
+            if (snackbar == null){
+                snackbar = Snackbar.make(this@MainActivity.findViewById(android.R.id.content), message, Snackbar.LENGTH_INDEFINITE)
+                snackbar?.view?.setBackgroundColor(0xbf323232.toInt())
+                snackbar?.show()
+            } else {
+                snackbar?.setText(message)
+            }
         }
     }
 
@@ -264,5 +324,4 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
 }
 
 
-// TODO: Verify graceful exit on unsupported devices session could be null maybe?
-// TODO: Verify what happens when camera permissions are denied
+// TODO: Draw shadows to improve realism
