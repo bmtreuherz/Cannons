@@ -9,10 +9,12 @@ import android.util.Log
 import android.view.*
 import android.widget.Toast
 import bmtreuherz.cannons.rendering.BackgroundRenderer
+import bmtreuherz.cannons.rendering.ObjectRenderer
 import com.google.ar.core.*
 import com.google.ar.core.exceptions.UnavailableApkTooOldException
 import com.google.ar.core.exceptions.UnavailableArcoreNotInstalledException
 import com.google.ar.core.exceptions.UnavailableSdkTooOldException
+import java.io.IOException
 import java.util.concurrent.ArrayBlockingQueue
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -38,7 +40,11 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
 
     // Renderers
     private var backgroundRenderer = BackgroundRenderer()
+    private var objectRenderer = ObjectRenderer()
 
+    // TODO: REMOVE
+    var rendered = false
+    var anchor: Anchor? = null
 
     // Activity Methods
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -177,6 +183,13 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
         backgroundRenderer.createOnGlThread(this)
         session.setCameraTextureName(backgroundRenderer.textureId)
 
+        // Setup the object renderer
+        try {
+            objectRenderer.createOnGlThread(this, "andy.obj", "andy.png")
+            objectRenderer.setMaterialProperties(0.0f, 3.5f, 1.0f, 6.0f)
+        } catch (e: IOException) {
+            Log.e(TAG, "Failed to read obj file")
+        }
     }
 
     override fun onDrawFrame(p0: GL10?) {
@@ -199,6 +212,24 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
             }
 
             // TODO: Draw 3d objects
+            if (anchor == null) {
+                anchor = session.createAnchor(camera.pose)
+            }
+
+            val objLocation = FloatArray(16)
+            anchor?.pose?.toMatrix(objLocation, 0)
+            objectRenderer.updateModelMatrix(objLocation, 0.4f)
+
+            // TODO: Clean this up
+            var projM = FloatArray(16)
+            camera.getProjectionMatrix(projM, 0, 0.1f, 100.0f)
+
+            var viewM = FloatArray(16)
+            camera.getViewMatrix(viewM, 0)
+
+            var lightIntensity = frame.lightEstimate.pixelIntensity
+
+            objectRenderer.draw(viewM, projM, lightIntensity)
 
         } catch(t: Throwable) {
             Log.e(TAG, "Exception on the OpenGL thread", t)

@@ -18,12 +18,12 @@ import javax.microedition.khronos.opengles.GL10;
 import bmtreuherz.cannons.R;
 
 /**
- * Created by Bradley on 12/24/17.
+ * This class renders the AR background from camera feed. It creates and hosts
+ * the texture give to ARCore to be filled with the camera image.
+ *
  * NOTE: This class comes directly from the ARCore sample app.
  */
 
-// This class renders the AR background from camera feed. It creates and hosts
-// the texture give to ARCore to be filled with the camera image.
 public class BackgroundRenderer {
     private static final String TAG = BackgroundRenderer.class.getSimpleName();
 

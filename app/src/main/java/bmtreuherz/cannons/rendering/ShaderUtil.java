@@ -10,11 +10,11 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 
 /**
- * Created by Bradley on 12/24/17.
+ * Shader helper functions.
+ *
  * NOTE: This class comes directly from the ARCore sample app.
  */
 
-// Shader helper functions.
 public class ShaderUtil {
     /**
      * Converts a raw text file, saved as a resource, into an OpenGL ES shader.
