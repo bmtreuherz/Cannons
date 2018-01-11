@@ -1,5 +1,6 @@
 package bmtreuherz.cannons.rendering;
 
+import android.animation.FloatArrayEvaluator;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -83,6 +84,7 @@ public class ObjectRenderer {
     private float[] mModelMatrix = new float[16];
     private float[] mModelViewMatrix = new float[16];
     private float[] mModelViewProjectionMatrix = new float[16];
+    private float[] mRotationMatrix = new float[16];
 
     // Set some default material properties to use for lighting.
     private float mAmbient = 0.3f;
@@ -237,6 +239,17 @@ public class ObjectRenderer {
         Matrix.multiplyMM(mModelMatrix, 0, modelMatrix, 0, scaleMatrix, 0);
     }
 
+    public void updateRotationMatrix(float horAngle, float vertAngle){
+        // TODO: Don't do new allocations every time
+        float[] vertRotationM = new float[16];
+        float[] horRotationM = new float[16];
+
+        Matrix.setRotateM(vertRotationM, 0, vertAngle, 0f, 0f, -1.0f);
+        Matrix.setRotateM(horRotationM, 0, horAngle, 0f, -1.0f, 0f);
+        Matrix.multiplyMM(mRotationMatrix, 0, horRotationM, 0, vertRotationM, 0);
+        // TODO: Include verticle rotation also.
+    }
+
     /**
      * Sets the surface characteristics of the rendered model.
      *
@@ -274,6 +287,9 @@ public class ObjectRenderer {
         // for calculating object position and light.
         Matrix.multiplyMM(mModelViewMatrix, 0, cameraView, 0, mModelMatrix, 0);
         Matrix.multiplyMM(mModelViewProjectionMatrix, 0, cameraPerspective, 0, mModelViewMatrix, 0);
+
+        // TODO: Make sure this works
+        Matrix.multiplyMM(mModelViewProjectionMatrix, 0, mModelViewProjectionMatrix, 0, mRotationMatrix, 0);
 
         GLES20.glUseProgram(mProgram);
 

@@ -2,6 +2,7 @@ package bmtreuherz.cannons
 
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
+import android.opengl.Matrix
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
 import android.support.design.widget.Snackbar
@@ -41,13 +42,27 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
     // Renderers
     private var backgroundRenderer = BackgroundRenderer()
     private var planeRenderer = PlaneRenderer()
-    private var objectRenderer = ObjectRenderer()
+    private var player1Renderer = ObjectRenderer()
+    private var player2Renderer = ObjectRenderer()
+    private var ballRenderer = ObjectRenderer()
 
-    // TODO: REMOVE
-    var anchor: Anchor? = null
     var anchor1: Anchor? = null
     var anchor2: Anchor? = null
     var playerOneTurn: Boolean = true
+
+    // TODO: REMOVE
+    @Volatile var player1HorAngle = 0.0f
+    @Volatile var player1VertAngle = 0.0f
+    @Volatile var player2HorAngle = 0.0f
+    @Volatile var player2VertAngle = 0.0f
+
+    // Ball Rendering Stuff TODO: Clean up
+    var drawBall = false
+    var dx = 0.0f
+    var dy = 0.1f
+    var dz = 0.0f
+    var ballOrigin = FloatArray(16)
+    var ballTranslateM = FloatArray(16)
 
     // Activity Methods
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -165,6 +180,17 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
             }
 
             override fun onDown(e: MotionEvent?): Boolean = true
+
+            override fun onScroll(e1: MotionEvent?, e2: MotionEvent?, distanceX: Float, distanceY: Float): Boolean {
+                if (playerOneTurn) {
+                    player1VertAngle += distanceY * 0.3f
+                    player1HorAngle += distanceX * 0.3f
+                } else {
+                    player2VertAngle += distanceY * 0.3f
+                    player2HorAngle += distanceX * 0.3f
+                }
+                return true
+            }
         })
         surfaceView.setOnTouchListener { _, event -> gestureDetector.onTouchEvent(event) }
 
@@ -194,8 +220,12 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
 
         // Setup the object renderer
         try {
-            objectRenderer.createOnGlThread(this, "andy.obj", "andy.png")
-            objectRenderer.setMaterialProperties(0.0f, 3.5f, 1.0f, 6.0f)
+            player1Renderer.createOnGlThread(this, "cannon.obj", "cannon.png")
+            player1Renderer.setMaterialProperties(0.0f, 3.5f, 1.0f, 6.0f)
+            player2Renderer.createOnGlThread(this, "cannon.obj", "cannon.png")
+            player2Renderer.setMaterialProperties(0.0f, 3.5f, 1.0f, 6.0f)
+            ballRenderer.createOnGlThread(this, "ball.obj", "ball.jpg")
+            ballRenderer.setMaterialProperties(0.0f, 3.5f, 1.0f, 6.0f)
         } catch (e: IOException) {
             Log.e(TAG, "Failed to read obj file")
         }
@@ -211,12 +241,15 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
             var frame = session.update()
             var camera = frame.camera
 
-            // Determine the projection maatrix
+            // Determine the projection and view matrix
             val projM = FloatArray(16)
             camera.getProjectionMatrix(projM, 0, 0.1f, 100.0f)
 
+            val viewM = FloatArray(16)
+            camera.getViewMatrix(viewM, 0)
+
             // Handle taps
-            handleTaps(frame)
+            handleTaps(frame, camera)
 
             // Draw the background
             drawBackground(frame)
@@ -233,7 +266,7 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
             drawPlanes(camera, projM)
 
             // Draw objects
-            drawObjects(frame, camera, projM)
+            drawObjects(frame, projM, viewM)
 
         } catch(t: Throwable) {
             Log.e(TAG, "Exception on the OpenGL thread", t)
@@ -278,27 +311,71 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
         backgroundRenderer.draw(frame)
     }
 
-    private fun handleTaps(frame: Frame){
-        // TODO: Implement
+    private fun handleTaps(frame: Frame, camera: Camera){
+        var tap = queuedTaps.poll()
+        if (tap != null && camera.trackingState == Trackable.TrackingState.TRACKING){
+            for (hit: HitResult in frame.hitTest(tap)){
+                // Check if any plane was hit, and if it was hit inside the plane polygon
+                var trackable = hit.trackable
+                if (trackable is Plane && trackable.isPoseInPolygon(hit.hitPose)){
+
+                    // We have a tap that intersects a plane
+                    when {
+                        anchor1 == null -> {
+                            anchor1 = hit.createAnchor()
+                            showSnackbarMessage("Player two place your cannon.")
+                        }
+                        anchor2 == null -> {
+                            anchor2 = hit.createAnchor()
+                            showSnackbarMessageWithButton("Player one's turn.", "Fire!", View.OnClickListener { fire(anchor1, 1.0f) })
+                        }
+                    }
+                }
+                break
+            }
+        }
     }
 
-    private fun drawObjects(frame: Frame, camera: Camera, projM: FloatArray){
-        // TODO: Do this a real way
-        if (anchor == null) {
-            anchor = session.createAnchor(camera.pose)
-        }
+    private fun fire(origin: Anchor?, power: Float){
+        drawBall = true
+        origin?.pose?.toMatrix(ballOrigin, 0)
+    }
 
-        val objLocation = FloatArray(16)
-        anchor?.pose?.toMatrix(objLocation, 0)
-        objectRenderer.updateModelMatrix(objLocation, 0.4f)
-
-        // TODO: Clean this up
-        val viewM = FloatArray(16)
-        camera.getViewMatrix(viewM, 0)
+    private fun drawObjects(frame: Frame, projM: FloatArray, viewM: FloatArray){
 
         val lightIntensity = frame.lightEstimate.pixelIntensity
 
-        objectRenderer.draw(viewM, projM, lightIntensity)
+        if (anchor1 != null && anchor1?.trackingState == Trackable.TrackingState.TRACKING){
+            val objLocation = FloatArray(16)
+            anchor1?.pose?.toMatrix(objLocation, 0)
+            player1Renderer.updateModelMatrix(objLocation, 0.12f)
+            player1Renderer.updateRotationMatrix(player1HorAngle, player1VertAngle)
+            player1Renderer.draw(viewM, projM, lightIntensity)
+        }
+
+        if (anchor2 != null && anchor2?.trackingState == Trackable.TrackingState.TRACKING){
+            val objLocation = FloatArray(16)
+            anchor2?.pose?.toMatrix(objLocation, 0)
+            player2Renderer.updateModelMatrix(objLocation, 0.12f)
+            player2Renderer.updateRotationMatrix(player2HorAngle, player2VertAngle)
+
+            player2Renderer.draw(viewM, projM, lightIntensity)
+        }
+
+        if (drawBall){
+            dx += .01f
+            if (dx < 2){
+                Matrix.translateM(ballTranslateM, 0, ballOrigin, 0, dx, dy, dz)
+                ballRenderer.updateModelMatrix(ballTranslateM, 0.02f)
+                ballRenderer.updateRotationMatrix(0f, 0f)
+                ballRenderer.draw(viewM, projM, lightIntensity)
+            } else {
+                drawBall = false
+                playerOneTurn = false
+                showSnackbarMessageWithButton("Player two's turn.", "Fire!", View.OnClickListener { fire(anchor2, 1.0f) })
+
+            }
+        }
     }
 
 
@@ -315,6 +392,16 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
         }
     }
 
+    private fun showSnackbarMessageWithButton(message: String, buttonText: String, action: View.OnClickListener){
+        hideSnackbarMessage()
+        runOnUiThread {
+            snackbar = Snackbar.make(this@MainActivity.findViewById(android.R.id.content), message, Snackbar.LENGTH_INDEFINITE)
+            snackbar?.view?.setBackgroundColor(0xbf323232.toInt())
+            snackbar?.setAction(buttonText, action)
+            snackbar?.show()
+        }
+    }
+
     private fun hideSnackbarMessage(){
         runOnUiThread {
             snackbar?.dismiss()
@@ -325,3 +412,4 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer{
 
 
 // TODO: Draw shadows to improve realism
+// TODO: Fix canonnball texture
